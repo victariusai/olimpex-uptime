@@ -1,0 +1,26 @@
+name: keepalive
+
+# GitHub отключает расписание в репозитории, где 60 дней не было коммитов. Здесь коммитов не
+# бывает по природе задачи, поэтому раз в месяц делаем отметку — иначе внешний сторож тихо умрёт
+# через два месяца, и об этом никто не узнает до следующей аварии.
+on:
+  schedule:
+    - cron: "17 6 1 * *"       # 1-го числа каждого месяца
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  touch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Отметка активности
+        run: |
+          date -u +"последняя отметка активности: %Y-%m-%d %H:%M UTC" > .keepalive
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .keepalive
+          git commit -m "keepalive: держим расписание активным" || exit 0
+          git push
