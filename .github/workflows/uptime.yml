@@ -1,0 +1,48 @@
+name: uptime
+
+# Внешний сторож olimpex.pro: живёт ВНЕ сервера, поэтому видит аварию даже тогда, когда сервер
+# полностью отрезан от мира — как 12.09.2026 при аварии международного транзита у хостера
+# (машина работала, сайт отвечал изнутри, но снаружи его не видел никто).
+on:
+  schedule:
+    - cron: "*/5 * * * *"      # каждые 5 минут; GitHub может задержать запуск на 5-15 минут
+  workflow_dispatch:
+    inputs:
+      test_alert:
+        description: "Прислать тестовую тревогу в Telegram (проверка канала оповещения)"
+        type: boolean
+        default: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Проверить сайт
+        id: probe
+        run: |
+          ok=0
+          for i in 1 2 3; do
+            body=$(curl -s --max-time 15 https://olimpex.pro/health || true)
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 https://olimpex.pro/ || true)
+            echo "попытка $i: /health='$body' главная=$code"
+            if [ "$body" = '{"status":"ok"}' ] && [ "$code" = "200" ]; then ok=1; break; fi
+            sleep 20
+          done
+          if [ "${{ inputs.test_alert }}" = "true" ]; then ok=0; echo "ручной тест: имитирую сбой"; fi
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+
+      - name: Тревога в Telegram
+        if: steps.probe.outputs.ok != '1'
+        env:
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT: ${{ secrets.TG_CHAT }}
+          IS_TEST: ${{ inputs.test_alert }}
+        run: |
+          if [ "$IS_TEST" = "true" ]; then
+            text="🧪 Тест внешнего сторожа OLIMPEX. Канал оповещения работает, сайт проверять не пытались."
+          else
+            text="🔴 OLIMPEX: сайт не открывается СНАРУЖИ (проверка из GitHub, 3 попытки за минуту). Сервер может быть жив, но недоступен из интернета — так было при аварии транзита хостера. Проверить: панель Hoster.kz, затем поддержку."
+          fi
+          curl -s --max-time 20 -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
+            -d chat_id="$TG_CHAT" --data-urlencode text="$text" -o /dev/null
+          if [ "$IS_TEST" != "true" ]; then exit 1; fi
