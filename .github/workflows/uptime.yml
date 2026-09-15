@@ -46,6 +46,12 @@ jobs:
           else
             text="🔴 OLIMPEX: сайт не открывается СНАРУЖИ (проверка из GitHub, 3 попытки за минуту). Сервер может быть жив, но недоступен из интернета — так было при аварии транзита хостера. Проверить: панель Hoster.kz, затем поддержку."
           fi
-          curl -s --max-time 20 -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
-            -d chat_id="$TG_CHAT" --data-urlencode text="$text" -o /dev/null
+          resp=$(curl -s --max-time 20 -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
+            -d chat_id="$TG_CHAT" --data-urlencode text="$text")
+          # Telegram не даёт боту писать первым: пока владелец не нажал «Старт», приходит
+          # «chat not found» и тревога теряется молча. Поэтому проверяем ответ явно.
+          case "$resp" in
+            *'"ok":true'*) echo "тревога доставлена" ;;
+            *) echo "ТРЕВОГА НЕ ДОСТАВЛЕНА: $resp"; exit 1 ;;
+          esac
           if [ "$IS_TEST" != "true" ]; then exit 1; fi
